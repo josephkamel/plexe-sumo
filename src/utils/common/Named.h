@@ -33,6 +33,16 @@
 #include <set>
 
 
+/// @brief Function-object for stable sorting of objects acting like Named without being derived (SUMOVehicle)
+// @note Numbers of different lenghts will not be ordered by alphanumerical sorting
+struct ComparatorIdLess {
+   template<class T>
+	bool operator()(const T* const a, const T* const b) const {
+		return a->getID() < b->getID();
+	}
+};
+
+
 // ===========================================================================
 // class definitions
 // ===========================================================================
@@ -71,25 +81,6 @@ public:
     void setID(const std::string& newID) {
         myID = newID;
     }
-
-
-    /// @brief Function-object for stable sorting in containers
-    // @note Numbers of different lengths will not be ordered by alphanumerical sorting
-    struct ComparatorIdLess {
-        bool operator()(Named* const a, Named* const b) const {
-            return a->getID() < b->getID();
-        }
-    };
-
-    /// @brief Function-object for stable sorting of objects acting like Named without being derived (SUMOVehicle)
-    // @note Numbers of different lenghts will not be ordered by alphanumerical sorting
-    template <class NamedLike>
-    struct NamedLikeComparatorIdLess {
-        bool operator()(const NamedLike* const a, const NamedLike* const b) const {
-            return a->getID() < b->getID();
-        }
-    };
-
 
     /** @class StoringVisitor
      * @brief Allows to store the object; used as context while traveling the rtree in TraCI
