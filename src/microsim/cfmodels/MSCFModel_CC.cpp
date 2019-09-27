@@ -317,6 +317,15 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
         ccAcceleration = _cc(veh, egoSpeed, vars->ccDesiredSpeed);
         accAcceleration = _acc(veh, egoSpeed, predSpeed, gap2pred, vars->accHeadwayTime);
 
+        if (vars->accSafetyMargin != 0 && accAcceleration < 0) {
+            if (gap2pred > vars->accHeadwayTime * egoSpeed + 2) {
+                /* The initial switching phase finished and the vehicles reached the correct distance */
+                vars->accSafetyMargin = 0;
+            } else {
+                accAcceleration *= (1 + vars->accSafetyMargin);
+            }
+        }
+
         if (gap2pred > vars->sensors.at(Plexe::VEHICLE_SENSORS::RADAR_DISTANCE).maxValue || ccAcceleration < accAcceleration) {
             controllerAcceleration = ccAcceleration;
         }
@@ -473,7 +482,6 @@ MSCFModel_CC::_acc(const MSVehicle *veh, double egoSpeed, double predSpeed, doub
     CC_VehicleVariables *vars = (CC_VehicleVariables *)veh->getCarFollowVariables();
     //Eq. 6.18 of the Rajamani book
     return -1.0 / headwayTime * (egoSpeed - predSpeed + vars->accLambda * (-gap2pred + headwayTime * egoSpeed + 2));
-
 }
 
 double
@@ -861,6 +869,10 @@ void MSCFModel_CC::setParameter(MSVehicle *veh, const std::string& key, const st
         }
         if (key.compare(PAR_ACC_HEADWAY_TIME) == 0) {
             vars->accHeadwayTime = TplConvert::_2double(value.c_str());
+            return;
+        }
+        if (key.compare(PAR_ACC_DEGR_SAFETY_MARGIN) == 0) {
+            vars->accSafetyMargin = TplConvert::_2double(value.c_str());
             return;
         }
         if (key.compare(PAR_USE_CONTROLLER_ACCELERATION) == 0) {

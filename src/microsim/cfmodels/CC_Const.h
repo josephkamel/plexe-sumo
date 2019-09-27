@@ -190,6 +190,9 @@ enum VEHICLE_SENSORS {
 // set ACC headway time
 #define PAR_ACC_HEADWAY_TIME             "ccaht"
 
+// set ACC safety margin after degradation
+#define PAR_ACC_DEGR_SAFETY_MARGIN       "ccasm"
+
 // return engine information (for the realistic engine model)
 #define PAR_ENGINE_DATA                  "cced"
 

@@ -123,6 +123,7 @@ public:
 
     /// @brief headway time for ACC
     double accHeadwayTime;
+    double accSafetyMargin;
     double accLambda;
 
     /// @brief determines whether PATH's CACC should use the real vehicle
