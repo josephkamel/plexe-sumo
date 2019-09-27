@@ -247,9 +247,9 @@ public:
     enum Plexe::ACTIVE_CONTROLLER getActiveController(const MSVehicle *veh) const;
 
     /**
-     * @brief return the data that is currently being measured by the radar
+     * @brief return the data that is currently being measured by the radar (with or without uncertainties)
      */
-    void getRadarMeasurements(const MSVehicle * veh, double &distance, double &relativeSpeed) const;
+    void getRadarMeasurements(const MSVehicle * veh, double &distance, double &relativeSpeed, double &samplingTime, bool realisticSensor = true) const;
 
     /**
      * @brief tells the module that in the last timestep the car has crashed (or not)
@@ -416,7 +416,6 @@ private:
     const double myFlatbedKp;
     const double myFlatbedH;
     const double myFlatbedD;
-
 };
 
 #endif /* MSCFMODEL_CC_H */

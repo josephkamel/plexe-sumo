@@ -35,6 +35,7 @@
 #include "GenericEngineModel.h"
 #include "FirstOrderLagModel.h"
 #include "RealisticEngineModel.h"
+#include "RealisticSensor.h"
 
 class CC_VehicleVariables : public MSCFModel::VehicleVariables {
 public:
@@ -221,6 +222,9 @@ public:
 
     /// @brief automatic whole platoon lane change
     bool autoLaneChange;
+
+    // @brief The objects used to represent the characteristic of different sensors
+    std::map<enum Plexe::VEHICLE_SENSORS, RealisticSensor> sensors;
 };
 
 #endif

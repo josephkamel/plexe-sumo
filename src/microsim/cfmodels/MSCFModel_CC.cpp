@@ -220,8 +220,8 @@ MSCFModel_CC::stopSpeed(const MSVehicle* const veh, double speed, double gap2pre
     CC_VehicleVariables *vars = (CC_VehicleVariables *)veh->getCarFollowVariables();
     if (vars->activeController != Plexe::DRIVER)
     {
-        double gap2pred, relSpeed;
-        getRadarMeasurements(veh, gap2pred, relSpeed);
+        double gap2pred, relSpeed, samplingTime;
+        getRadarMeasurements(veh, gap2pred, relSpeed, samplingTime);
         if (gap2pred == -1)
             gap2pred = std::numeric_limits<double>().max();
         return _v(veh, gap2pred, speed, speed + relSpeed);
@@ -235,8 +235,8 @@ double MSCFModel_CC::freeSpeed(const MSVehicle* const veh, double speed, double 
     CC_VehicleVariables *vars = (CC_VehicleVariables *)veh->getCarFollowVariables();
     if (vars->activeController != Plexe::DRIVER)
     {
-        double gap2pred, relSpeed;
-        getRadarMeasurements(veh, gap2pred, relSpeed);
+        double gap2pred, relSpeed, samplingTime;
+        getRadarMeasurements(veh, gap2pred, relSpeed, samplingTime);
         if (gap2pred == -1)
             gap2pred = std::numeric_limits<double>().max();
         return _v(veh, gap2pred, speed, speed + relSpeed);
@@ -253,7 +253,7 @@ MSCFModel_CC::interactionGap(const MSVehicle* const veh, double vL) const {
     if (vars->activeController != Plexe::DRIVER)
     {
         //maximum radar range is CC is enabled
-        return 250;
+        return vars->sensors.at(Plexe::VEHICLE_SENSORS::RADAR_DISTANCE).maxValue;
     }
     else {
         return myHumanDriver->interactionGap(veh, vL);
@@ -298,6 +298,15 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
 
     auto* vars = (CC_VehicleVariables*) veh->getCarFollowVariables();
 
+    // Overwrite the parameters with the values obtained through realistic sensors
+    double exactEgoSpeed = egoSpeed;
+    egoSpeed = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED).getReading(egoSpeed, SIMTIME);
+
+    double distance, relSpeed, radarSamplingTime;
+    getRadarMeasurements(veh, distance, relSpeed, radarSamplingTime);
+    gap2pred = distance > 0 ? distance : vars->sensors.at(Plexe::VEHICLE_SENSORS::RADAR_DISTANCE).maxValue;
+    predSpeed = egoSpeed + relSpeed;
+
     if (vars->crashed || vars->crashedVictim)
         return 0;
 
@@ -308,7 +317,7 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
         ccAcceleration = _cc(veh, egoSpeed, vars->ccDesiredSpeed);
         accAcceleration = _acc(veh, egoSpeed, predSpeed, gap2pred, vars->accHeadwayTime);
 
-        if (gap2pred > 250 || ccAcceleration < accAcceleration) {
+        if (gap2pred > vars->sensors.at(Plexe::VEHICLE_SENSORS::RADAR_DISTANCE).maxValue || ccAcceleration < accAcceleration) {
             controllerAcceleration = ccAcceleration;
         }
         else {
@@ -347,17 +356,21 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
         }
 
         // Use prediction to estimate the speed values depending on the elapsed time and the advertised acceleration
-        double currentTime = STEPS2TIME(MSNet::getInstance()->getCurrentTimeStep() + DELTA_T);
+        double currentTime = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_TIME).getReading(
+                STEPS2TIME(MSNet::getInstance()->getCurrentTimeStep() + DELTA_T), SIMTIME);
         if (vars->usePrediction) {
-            double measurementTimeLeader = vars->useRadarPredSpeed && vars->position == 1 ? currentTime : vars->frontDataReadTime;
+            double measurementTimeLeader = vars->useRadarPredSpeed && vars->position == 1 ? radarSamplingTime : vars->frontDataReadTime;
             leaderSpeed += (currentTime - measurementTimeLeader) * vars->leaderAcceleration;
 
-            double measurementTimePred = vars->useRadarPredSpeed ? currentTime : vars->frontDataReadTime;
+            double measurementTimePred = vars->useRadarPredSpeed ? radarSamplingTime : vars->frontDataReadTime;
             predSpeed += (currentTime - measurementTimePred) * vars->frontAcceleration;
         }
 
         // Needed by the consensus controller
         Position position = veh->getPosition();
+        position.set(
+                vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_GPS_X).getReading(position.x(), SIMTIME),
+                vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_GPS_Y).getReading(position.y(), SIMTIME));
 
 
         switch (vars->activeController) {
@@ -415,7 +428,8 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
             case Plexe::FLATBED:
 
                 if (vars->caccInitialized) {
-                    double acceleration = veh->getAcceleration();
+                    double acceleration = vars->sensors.at(
+                            Plexe::VEHICLE_SENSORS::EGO_ACCELERATION).getReading(veh->getAcceleration(), SIMTIME);
                     controllerAcceleration = _flatbed(veh, acceleration, egoSpeed, predSpeed, gap2pred, leaderSpeed);
                 }
                 else {
@@ -440,7 +454,8 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
 
     }
 
-    return MAX2(double(0), egoSpeed + ACCEL2SPEED(controllerAcceleration));
+    // Use the exact speed value to compute the value for the next time step
+    return MAX2(double(0), exactEgoSpeed + ACCEL2SPEED(controllerAcceleration));
 }
 
 double
@@ -539,6 +554,10 @@ MSCFModel_CC::_consensus(const MSVehicle* veh, double egoSpeed, double leaderSpe
 
     //compensate my position: compute prediction of what will be my position at time of actuation
     Position egoVelocity = veh->getVelocityVector();
+    egoVelocity.set(
+            vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED_X).getReading(egoVelocity.x(), SIMTIME),
+            vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED_Y).getReading(egoVelocity.y(), SIMTIME));
+
     egoPosition.set(egoPosition.x() + egoVelocity.x() * STEPS2TIME(DELTA_T),
                     egoPosition.y() + egoVelocity.y() * STEPS2TIME(DELTA_T));
     vehicles[index].speed = egoSpeed;
@@ -621,7 +640,7 @@ MSCFModel_CC::getVehicleInformation(const MSVehicle* veh, double& speed, double&
     acceleration = veh->getAcceleration();
     controllerAcceleration = vars->controllerAcceleration;
     position = veh->getPosition();
-    time = STEPS2TIME(MSNet::getInstance()->getCurrentTimeStep());
+    time = SIMTIME;
 }
 
 void MSCFModel_CC::setParameter(MSVehicle *veh, const std::string& key, const std::string& value) const {
@@ -881,6 +900,33 @@ void MSCFModel_CC::setParameter(MSVehicle *veh, const std::string& key, const st
             vars->useRadarPredSpeed = TplConvert::_2int(value.c_str()) == 1;
             return;
         }
+        if (key.compare(PAR_SENSOR_PARAMETERS_RANGE) == 0) {
+            int sensorId;
+            buf >> sensorId;
+
+            auto& sensor = vars->sensors.at(static_cast<Plexe::VEHICLE_SENSORS>(sensorId));
+            buf >> sensor.minValue;
+            buf >> sensor.maxValue;
+            buf >> sensor.decimalDigits;
+            buf >> sensor.updateInterval;
+
+            return;
+        }
+        if (key.compare(PAR_SENSOR_PARAMETERS_ERRORS) == 0) {
+            int sensorId;
+            buf >> sensorId;
+
+            auto& sensor = vars->sensors.at(static_cast<Plexe::VEHICLE_SENSORS>(sensorId));
+            buf >> sensor.absoluteError;
+            buf >> sensor.percentageError;
+            buf >> sensor.sumErrors;
+
+            int seed;
+            buf >> seed;
+            sensor.setSeed(seed);
+
+            return;
+        }
     } catch (NumberFormatException &) {
         throw InvalidArgument("Invalid value '" + value + "' for parameter '" + key + "' for vehicle '" + veh->getID() + "'");
     }
@@ -898,17 +944,31 @@ std::string MSCFModel_CC::getParameter(const MSVehicle *veh, const std::string& 
         buf << veh->getSpeed() << veh->getAcceleration() <<
                vars->controllerAcceleration << veh->getPosition().x() <<
                veh->getPosition().y() <<
-               STEPS2TIME(MSNet::getInstance()->getCurrentTimeStep()) <<
+               SIMTIME <<
                velocity.x() << velocity.y() << veh->getAngle();
+        return buf.str();
+    }
+    if (key.compare(PAR_SPEED_AND_ACCELERATION_REALISTIC) == 0) {
+        Position velocity = veh->getVelocityVector();
+
+        buf << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED).getReading(veh->getSpeed(), SIMTIME)
+            << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_ACCELERATION).getReading(veh->getAcceleration(), SIMTIME)
+            << vars->controllerAcceleration
+            << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_GPS_X).getReading(veh->getPosition().x(), SIMTIME)
+            << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_GPS_Y).getReading(veh->getPosition().y(), SIMTIME)
+            << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_TIME).getReading(SIMTIME, SIMTIME)
+            << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED_X).getReading(velocity.x(), SIMTIME)
+            << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED_Y).getReading(velocity.y(), SIMTIME)
+            << vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_ANGLE).getReading(veh->getAngle(), SIMTIME);
         return buf.str();
     }
     if (key.compare(PAR_CRASHED) == 0) {
         return vars->crashed ? "1" : "0";
     }
-    if (key.compare(PAR_RADAR_DATA) == 0) {
-        double distance, relSpeed;
-        getRadarMeasurements(veh, distance, relSpeed);
-        buf << distance << relSpeed;
+    if (key.compare(PAR_RADAR_DATA) == 0 || key.compare(PAR_RADAR_DATA_REALISTIC) == 0) {
+        double distance, relSpeed, samplingTime;
+        getRadarMeasurements(veh, distance, relSpeed, samplingTime, key == PAR_RADAR_DATA_REALISTIC);
+        buf << distance << relSpeed << samplingTime;
         return buf.str();
     }
     if (key.compare(PAR_LANES_COUNT) == 0) {
@@ -977,7 +1037,7 @@ std::string MSCFModel_CC::getParameter(const MSVehicle *veh, const std::string& 
         buf << vars->caccSpacing;
         return buf.str();
     }
-    if (key.find(CC_PAR_VEHICLE_DATA) == 0) {
+    if (key.compare(CC_PAR_VEHICLE_DATA) == 0 || key.compare(CC_PAR_VEHICLE_DATA_REALISTIC) == 0) {
         ParBuffer inBuf(key);
         int index;
         inBuf >> index;
@@ -986,6 +1046,18 @@ std::string MSCFModel_CC::getParameter(const MSVehicle *veh, const std::string& 
             vehicle.index = -1;
         else
             vehicle = vars->vehicles[index];
+
+        if (key == CC_PAR_VEHICLE_DATA_REALISTIC) {
+            vehicle.time = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_TIME).getReading(vehicle.time, SIMTIME);
+            vehicle.positionX = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_GPS_X).getReading(vehicle.positionX, SIMTIME);
+            vehicle.positionY = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_GPS_Y).getReading(vehicle.positionY, SIMTIME);
+            vehicle.speed = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED).getReading(vehicle.speed, SIMTIME);
+            vehicle.speedX = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED_X).getReading(vehicle.speedX, SIMTIME);
+            vehicle.speedY = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_SPEED_Y).getReading(vehicle.speedY, SIMTIME);
+            vehicle.acceleration = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_ACCELERATION).getReading(vehicle.acceleration, SIMTIME);
+            vehicle.angle = vars->sensors.at(Plexe::VEHICLE_SENSORS::EGO_ANGLE).getReading(vehicle.angle, SIMTIME);
+        }
+
         buf << vehicle.index << vehicle.speed << vehicle.acceleration <<
                vehicle.positionX << vehicle.positionY << vehicle.time <<
                vehicle.length << vehicle.u << vehicle.speedX <<
@@ -1037,16 +1109,27 @@ enum Plexe::ACTIVE_CONTROLLER MSCFModel_CC::getActiveController(const MSVehicle 
     return vars->activeController;
 }
 
-void MSCFModel_CC::getRadarMeasurements(const MSVehicle * veh, double &distance, double &relativeSpeed) const {
-    std::pair<std::string, double> l = libsumo::Vehicle::getLeader(veh->getID(), 250);
-    if (l.second < 0) {
+void MSCFModel_CC::getRadarMeasurements(const MSVehicle * veh, double &distance, double &relativeSpeed, double &samplingTime, bool realisticSensors) const {
+    auto *vars = (CC_VehicleVariables *) veh->getCarFollowVariables();
+    double maxRadarDistance = vars->sensors.at(Plexe::VEHICLE_SENSORS::RADAR_DISTANCE).maxValue;
+    std::pair<std::string, double> predecessor = libsumo::Vehicle::getLeader(veh->getID(), maxRadarDistance);
+
+    samplingTime = SIMTIME;
+    if (predecessor.second < 0) {
         distance = -1;
         relativeSpeed = 0;
+        return;
     }
-    else {
-        distance = l.second;
-        SUMOVehicle *leader = MSNet::getInstance()->getVehicleControl().getVehicle(l.first);
-        relativeSpeed = leader->getSpeed() - veh->getSpeed();
+
+    SUMOVehicle *predecessor_veh = MSNet::getInstance()->getVehicleControl().getVehicle(predecessor.first);
+    distance = predecessor.second;
+    relativeSpeed = predecessor_veh->getSpeed() - veh->getSpeed();
+
+    if (realisticSensors) {
+        double distanceSampling, speedSampling;
+        distance = vars->sensors.at(Plexe::VEHICLE_SENSORS::RADAR_DISTANCE).getReading(distance, SIMTIME, distanceSampling);
+        relativeSpeed = vars->sensors.at(Plexe::VEHICLE_SENSORS::RADAR_SPEED).getReading(relativeSpeed, SIMTIME, speedSampling);
+        samplingTime = std::min(distanceSampling, speedSampling);
     }
 }
 
@@ -1060,8 +1143,8 @@ void MSCFModel_CC::setCrashed(const MSVehicle *veh, bool crashed, bool victim) c
 
 double MSCFModel_CC::getACCAcceleration(const MSVehicle *veh) const {
     CC_VehicleVariables *vars = (CC_VehicleVariables *) veh->getCarFollowVariables();
-    double distance, relSpeed;
-    getRadarMeasurements(veh, distance, relSpeed);
+    double distance, relSpeed, samplingTime;
+    getRadarMeasurements(veh, distance, relSpeed, samplingTime);
     if (distance < 0)
         return 0;
     else

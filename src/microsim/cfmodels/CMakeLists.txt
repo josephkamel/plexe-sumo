@@ -37,6 +37,8 @@ set(microsim_cfmodels_STAT_SRCS
    MSCFModel_CC.cpp
    MSCFModel_CC.h
    ParBuffer.h
+   RealisticSensor.cpp
+   RealisticSensor.h
    RealisticEngineModel.cpp
    RealisticEngineModel.h
    VehicleEngineHandler.cpp

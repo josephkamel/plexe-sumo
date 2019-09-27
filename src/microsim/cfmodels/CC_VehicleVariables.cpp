@@ -15,6 +15,8 @@
 /****************************************************************************/
 #include "CC_VehicleVariables.h"
 
+#define DEFAULT_RADAR_MAX_DISTANCE 250 /* m */
+
 //initialize default L and K matrices
 const int CC_VehicleVariables::defaultL[][MAX_N_CARS] =
     {
@@ -82,6 +84,20 @@ CC_VehicleVariables::CC_VehicleVariables() :
     //no data about any vehicle has been set
     for (int i = 0; i < MAX_N_CARS; i++)
         initialized[i] = false;
+
+    // Construct the default values for the different sensor parameters
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_TIME, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_GPS_X, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_GPS_Y, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_SPEED, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_SPEED_X, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_SPEED_Y, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_ACCELERATION, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::EGO_ANGLE, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::RADAR_DISTANCE, RealisticSensor());
+    sensors.emplace(Plexe::VEHICLE_SENSORS::RADAR_SPEED, RealisticSensor());
+
+    sensors[Plexe::VEHICLE_SENSORS::RADAR_DISTANCE].maxValue = DEFAULT_RADAR_MAX_DISTANCE;
 }
 
 CC_VehicleVariables::~CC_VehicleVariables() {

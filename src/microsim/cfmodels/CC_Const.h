@@ -71,6 +71,23 @@ struct VEHICLE_DATA {
     double angle;        //vehicle angle in radians
 };
 
+/**
+ * @enum VEHICLE_SENSORS
+ * @brief An enumeration representing the different sensors associated to a vehicle
+ */
+enum VEHICLE_SENSORS {
+    EGO_TIME = 0,
+    EGO_GPS_X = 1,
+    EGO_GPS_Y = 2,
+    EGO_SPEED = 3,
+    EGO_SPEED_X = 4,
+    EGO_SPEED_Y = 5,
+    EGO_ACCELERATION = 6,
+    EGO_ANGLE = 7,
+    RADAR_DISTANCE = 8,
+    RADAR_SPEED = 9,
+};
+
 #define MAX_N_CARS 8
 
 #define CC_ENGINE_MODEL_FOLM             0x00    //first order lag model
@@ -85,6 +102,8 @@ struct VEHICLE_DATA {
 #define ENGINE_PAR_DT                    "dt_s"
 
 #define CC_PAR_VEHICLE_DATA              "ccvd"   //data about a vehicle, like position, speed, acceleration, etc
+#define CC_PAR_VEHICLE_DATA_REALISTIC    "ccvdr"  //data about a vehicle, characterized by uncertainties according to the sensors parameters
+
 #define CC_PAR_VEHICLE_POSITION          "ccvp"   //position of the vehicle in the platoon (0 based)
 #define CC_PAR_PLATOON_SIZE              "ccps"   //number of cars in the platoon
 
@@ -129,6 +148,9 @@ struct VEHICLE_DATA {
 
 // get vehicle speed and acceleration, needed for example by the platoon leader (get: vehicle)
 #define PAR_SPEED_AND_ACCELERATION       "ccsa"
+// get vehicle speed and acceleration (characterized by uncertainties according to the sensors parameters)
+#define PAR_SPEED_AND_ACCELERATION_REALISTIC "ccsar"
+
 
 // set speed and acceleration of the platoon leader
 #define PAR_LEADER_SPEED_AND_ACCELERATION "cclsa"
@@ -147,6 +169,8 @@ struct VEHICLE_DATA {
 
 // get radar data from the car
 #define PAR_RADAR_DATA                   "ccrd"
+// get radar data from the car (characterized by uncertainties according to the sensors parameters)
+#define PAR_RADAR_DATA_REALISTIC         "ccrdr"
 
 // communicate with the cruise control to give him fake indications. this can be useful when you want
 // to advance a vehicle to a certain position, for example, for joining a platoon. clearly the ACC
@@ -177,6 +201,10 @@ struct VEHICLE_DATA {
 
 // enabling/disabling radar predecessor speed
 #define PAR_USE_RADAR_PRED_SPEED         "ccrps"
+
+// configuration of the parameters associated to the sensors
+#define PAR_SENSOR_PARAMETERS_RANGE      "ccspr"
+#define PAR_SENSOR_PARAMETERS_ERRORS     "ccspe"
 
 // add/remove members from own platoon
 #define PAR_ADD_MEMBER                   "ccam"
