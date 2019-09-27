@@ -337,22 +337,25 @@ private:
     /** @brief controller based on consensus strategy
      *
      * @param[in] egoSpeed vehicle current speed
+     * @param[in] leaderSpeed leader current speed
      * @param[in] egoPosition vehicle current position
+     * @param[in] gap2pred the distance from the preceding vehicle (measured by the radar)
      * @param[in] time current time
      * @return the acceleration to be given to the actuator
      */
-    double _consensus(const MSVehicle* veh, double egoSpeed, Position egoPosition, double time) const;
+    double _consensus(const MSVehicle* veh, double egoSpeed, double leaderSpeed, Position egoPosition, double gap2pred, double time) const;
 
     /** @brief computes the desired distance between vehicle i and vehicle j
      *
      * @param[in] vehicles data about all vehicles
+     * @param[in] d vector of spacings
      * @param[in] h vector of times headway
      * @param[in] i index of own vehicle
      * @param[in] j index of vehicle to compute distance from
      * @return the desired distance between vehicle i and j
      *
      */
-    double d_i_j(const struct Plexe::VEHICLE_DATA *vehicles, const double h[MAX_N_CARS], int i, int j) const;
+    double d_i_j(const struct Plexe::VEHICLE_DATA *vehicles, const double d[MAX_N_CARS], const double h[MAX_N_CARS], int i, int j) const;
 
     /** @brief flatbed platoon towing model
      *

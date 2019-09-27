@@ -65,7 +65,6 @@ MSCFModel_CC::MSCFModel_CC(const MSVehicleType* vtype,
 
     //instantiate the driver model. For now, use Krauss as default, then needs to be parameterized
     myHumanDriver = new MSCFModel_Krauss(vtype, accel, decel, decel, decel, 0.5, 1.5);
-
 }
 
 MSCFModel_CC::~MSCFModel_CC() {}
@@ -284,9 +283,7 @@ double
 MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, double predSpeed) const {
 
     //acceleration computed by the controller
-    double controllerAcceleration;
-    //speed computed by the model
-    double speed;
+    double controllerAcceleration = 0;
     //acceleration computed by the Cruise Control
     double ccAcceleration;
     //acceleration computed by the Adaptive Cruise Control
@@ -294,64 +291,78 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
     //acceleration computed by the Cooperative Adaptive Cruise Control
     double caccAcceleration;
     //variables needed by CACC
-    double predAcceleration, leaderAcceleration, leaderSpeed;
+    double predAcceleration, leaderAcceleration;
     //dummy variables used for auto feeding
     Position pos;
     double time;
-    double currentTime;
 
-    CC_VehicleVariables* vars = (CC_VehicleVariables*) veh->getCarFollowVariables();
+    auto* vars = (CC_VehicleVariables*) veh->getCarFollowVariables();
 
     if (vars->crashed || vars->crashedVictim)
         return 0;
 
-    if (vars->usePrediction)
-        currentTime = STEPS2TIME(MSNet::getInstance()->getCurrentTimeStep() + DELTA_T);
-
     if (vars->activeController != Plexe::DRIVER && vars->useFixedAcceleration) {
         controllerAcceleration = vars->fixedAcceleration;
     }
+    else if (vars->activeController == Plexe::ACC) {
+        ccAcceleration = _cc(veh, egoSpeed, vars->ccDesiredSpeed);
+        accAcceleration = _acc(veh, egoSpeed, predSpeed, gap2pred, vars->accHeadwayTime);
+
+        if (gap2pred > 250 || ccAcceleration < accAcceleration) {
+            controllerAcceleration = ccAcceleration;
+        }
+        else {
+            controllerAcceleration = accAcceleration;
+        }
+    }
     else {
+
+        // Use the real values obtained from SUMO, instead of the ones received through communication
+        if (vars->autoFeed) {
+            getVehicleInformation(vars->leaderVehicle, vars->leaderSpeed, vars->leaderAcceleration, vars->leaderControllerAcceleration, pos, time);
+            getVehicleInformation(vars->frontVehicle, vars->frontSpeed, vars->frontAcceleration, vars->frontControllerAcceleration, pos, time);
+        }
+
+        // Use either the acceleration requested by the controller or the measured one
+        if (vars->useControllerAcceleration) {
+            predAcceleration = vars->frontControllerAcceleration;
+            leaderAcceleration = vars->leaderControllerAcceleration;
+        }
+        else {
+            predAcceleration = vars->frontAcceleration;
+            leaderAcceleration = vars->leaderAcceleration;
+        }
+
+        // Overwrite the predecessor speed measured by the radar with the one obtained through wireless communication
+        if (!vars->useRadarPredSpeed) {
+            predSpeed = vars->frontSpeed;
+        }
+
+        // Get the leader speed obtained through V2X
+        double leaderSpeed = vars->leaderSpeed;
+
+        // Use the speed measured by the radar as leader speed if this vehicle directly follows the leader
+        if (vars->useRadarPredSpeed && vars->position == 1) {
+            leaderSpeed = predSpeed;
+        }
+
+        // Use prediction to estimate the speed values depending on the elapsed time and the advertised acceleration
+        double currentTime = STEPS2TIME(MSNet::getInstance()->getCurrentTimeStep() + DELTA_T);
+        if (vars->usePrediction) {
+            double measurementTimeLeader = vars->useRadarPredSpeed && vars->position == 1 ? currentTime : vars->frontDataReadTime;
+            leaderSpeed += (currentTime - measurementTimeLeader) * vars->leaderAcceleration;
+
+            double measurementTimePred = vars->useRadarPredSpeed ? currentTime : vars->frontDataReadTime;
+            predSpeed += (currentTime - measurementTimePred) * vars->frontAcceleration;
+        }
+
+        // Needed by the consensus controller
+        Position position = veh->getPosition();
+
 
         switch (vars->activeController) {
 
-            case Plexe::ACC:
-
-                ccAcceleration = _cc(veh, egoSpeed, vars->ccDesiredSpeed);
-                accAcceleration = _acc(veh, egoSpeed, predSpeed, gap2pred, vars->accHeadwayTime);
-
-                if (gap2pred > 250 || ccAcceleration < accAcceleration) {
-                    controllerAcceleration = ccAcceleration;
-                }
-                else {
-                    controllerAcceleration = accAcceleration;
-                }
-
-
-                break;
-
             case Plexe::CACC:
-
-                if (vars->autoFeed) {
-                    getVehicleInformation(vars->leaderVehicle, vars->leaderSpeed, vars->leaderAcceleration, vars->leaderControllerAcceleration, pos, time);
-                    getVehicleInformation(vars->frontVehicle, vars->frontSpeed, vars->frontAcceleration, vars->frontControllerAcceleration, pos, time);
-                }
-
-                if (vars->useControllerAcceleration) {
-                    predAcceleration = vars->frontControllerAcceleration;
-                    leaderAcceleration = vars->leaderControllerAcceleration;
-                }
-                else {
-                    predAcceleration = vars->frontAcceleration;
-                    leaderAcceleration = vars->leaderAcceleration;
-                }
-                //overwrite pred speed using data obtained through wireless communication
-                predSpeed = vars->frontSpeed;
-                leaderSpeed = vars->leaderSpeed;
-                if (vars->usePrediction) {
-                    predSpeed += (currentTime - vars->frontDataReadTime) * vars->frontAcceleration;
-                    leaderSpeed += (currentTime - vars->leaderDataReadTime) * vars->leaderAcceleration;
-                }
 
                 if (vars->caccInitialized)
                     controllerAcceleration = _cacc(veh, egoSpeed, predSpeed, predAcceleration, gap2pred, leaderSpeed, leaderAcceleration, vars->caccSpacing);
@@ -388,13 +399,6 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
 
             case Plexe::PLOEG:
 
-                if (vars->autoFeed)
-                    getVehicleInformation(vars->frontVehicle, vars->frontSpeed, vars->frontAcceleration, vars->frontControllerAcceleration, pos, time);
-
-                if (vars->useControllerAcceleration)
-                    predAcceleration = vars->frontControllerAcceleration;
-                else
-                    predAcceleration = vars->frontAcceleration;
                 //check if we received at least one packet
                 if (vars->frontInitialized)
                     //ploeg's controller computes \dot{u}_i, so we need to sum such value to the previously computed u_i
@@ -405,36 +409,19 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
                 break;
 
             case Plexe::CONSENSUS:
-
-                controllerAcceleration = _consensus(veh,
-                        egoSpeed,
-                        veh->getPosition(),
-                        STEPS2TIME(MSNet::getInstance()->getCurrentTimeStep() + DELTA_T)
-                );
-
+                controllerAcceleration = _consensus(veh, egoSpeed, leaderSpeed, position, gap2pred, currentTime);
                 break;
 
             case Plexe::FLATBED:
 
-                if (vars->autoFeed) {
-                    getVehicleInformation(vars->leaderVehicle, vars->leaderSpeed, vars->leaderAcceleration, vars->leaderControllerAcceleration, pos, time);
-                    getVehicleInformation(vars->frontVehicle, vars->frontSpeed, vars->frontAcceleration, vars->frontControllerAcceleration, pos, time);
+                if (vars->caccInitialized) {
+                    double acceleration = veh->getAcceleration();
+                    controllerAcceleration = _flatbed(veh, acceleration, egoSpeed, predSpeed, gap2pred, leaderSpeed);
                 }
-
-                //overwrite pred speed using data obtained through wireless communication
-                predSpeed = vars->frontSpeed;
-                leaderSpeed = vars->leaderSpeed;
-                if (vars->usePrediction) {
-                    predSpeed += (currentTime - vars->frontDataReadTime) * vars->frontAcceleration;
-                    leaderSpeed += (currentTime - vars->leaderDataReadTime) * vars->leaderAcceleration;
-                }
-
-                if (vars->caccInitialized)
-                    controllerAcceleration = _flatbed(veh, veh->getAcceleration(), egoSpeed, predSpeed, gap2pred, leaderSpeed);
-                else
+                else {
                     //do not let CACC take decisions until at least one packet has been received
                     controllerAcceleration = 0;
-
+                }
                 break;
 
             case Plexe::DRIVER:
@@ -453,9 +440,7 @@ MSCFModel_CC::_v(const MSVehicle* const veh, double gap2pred, double egoSpeed, d
 
     }
 
-    speed = MAX2(double(0), egoSpeed + ACCEL2SPEED(controllerAcceleration));
-
-    return speed;
+    return MAX2(double(0), egoSpeed + ACCEL2SPEED(controllerAcceleration));
 }
 
 double
@@ -505,7 +490,7 @@ MSCFModel_CC::_ploeg(const MSVehicle *veh, double egoSpeed, double predSpeed, do
 }
 
 double
-MSCFModel_CC::d_i_j(const struct Plexe::VEHICLE_DATA *vehicles, const double h[MAX_N_CARS], int i, int j) const {
+MSCFModel_CC::d_i_j(const struct Plexe::VEHICLE_DATA *vehicles, const double s[MAX_N_CARS], const double h[MAX_N_CARS], int i, int j) const {
 
     int k, min_i, max_i;
     double d = 0;
@@ -520,7 +505,7 @@ MSCFModel_CC::d_i_j(const struct Plexe::VEHICLE_DATA *vehicles, const double h[M
     }
     //compute distance
     for (k = min_i; k <= max_i; k++)
-        d += h[k] * vehicles[0].speed + vehicles[k].length + 15;
+        d += h[k] * vehicles[0].speed + vehicles[k].length + s[k];
 
     if (j < i)
         return d;
@@ -530,7 +515,7 @@ MSCFModel_CC::d_i_j(const struct Plexe::VEHICLE_DATA *vehicles, const double h[M
 }
 
 double
-MSCFModel_CC::_consensus(const MSVehicle* veh, double egoSpeed, Position egoPosition, double time) const {
+MSCFModel_CC::_consensus(const MSVehicle* veh, double egoSpeed, double leaderSpeed, Position egoPosition, double gap2pred, double time) const {
     //TODO: this controller, by using real GPS coordinates, does only work
     //when vehicles are traveling west-to-east on a straight line, basically
     //on the X axis. This needs to be fixed to consider direction as well
@@ -567,14 +552,14 @@ MSCFModel_CC::_consensus(const MSVehicle* veh, double egoSpeed, Position egoPosi
         return 0;
 
     //compute speed error.
-    speedError = -vars->b[index] * (egoSpeed - vehicles[0].speed);
+    speedError = -vars->b[index] * (egoSpeed - leaderSpeed);
 
     //compute desired distance term
     for (j = 0; j < nCars; j++) {
         if (j == index)
             continue;
         d_i += vars->L[index][j];
-        desiredDistance -= vars->K[index][j] * vars->L[index][j] * d_i_j(vehicles, vars->h, index, j);
+        desiredDistance -= vars->K[index][j] * vars->L[index][j] * d_i_j(vehicles, vars->s, vars->h, index, j);
     }
     desiredDistance = desiredDistance / d_i;
 
@@ -585,10 +570,22 @@ MSCFModel_CC::_consensus(const MSVehicle* veh, double egoSpeed, Position egoPosi
         //distance error for consensus with GPS equipped
         Position otherPosition;
         double dt = time - vehicles[j].time;
+
         //predict the position of the other vehicle
-        otherPosition.setx(vehicles[j].positionX + dt * vehicles[j].speedX);
-        otherPosition.sety(vehicles[j].positionY + dt * vehicles[j].speedY);
+        if (vars->usePrediction) {
+            otherPosition.setx(vehicles[j].positionX + dt * vehicles[j].speedX);
+            otherPosition.sety(vehicles[j].positionY + dt * vehicles[j].speedY);
+        } else {
+            otherPosition.setx(vehicles[j].positionX);
+            otherPosition.sety(vehicles[j].positionY);
+        }
+
         double distance = egoPosition.distanceTo2D(otherPosition) * sgn(j - index);
+        if (j == index-1) {
+            // If the considered vehicle is the predecessor, use the distance obtained through the radar
+            distance = (gap2pred + vars->vehicles[j].length) * sgn(j - index);
+        }
+
         actualDistance -= vars->K[index][j] * vars->L[index][j] * distance;
     }
 
@@ -785,6 +782,14 @@ void MSCFModel_CC::setParameter(MSVehicle *veh, const std::string& key, const st
             vars->flatbedD = TplConvert::_2double(value.c_str());
             return;
         }
+        if (key.compare(CC_PAR_CONSENSUS_H) == 0) {
+            std::fill(vars->h, vars->h + MAX_N_CARS, TplConvert::_2double(value.c_str()));
+            return;
+        }
+        if (key.compare(CC_PAR_CONSENSUS_S) == 0) {
+            std::fill(vars->s, vars->s + MAX_N_CARS, TplConvert::_2double(value.c_str()));
+            return;
+        }
         if (key.compare(CC_PAR_VEHICLE_ENGINE_MODEL) == 0) {
             if (vars->engine) {
                 delete vars->engine;
@@ -870,6 +875,10 @@ void MSCFModel_CC::setParameter(MSVehicle *veh, const std::string& key, const st
         }
         if (key.compare(PAR_USE_PREDICTION) == 0) {
             vars->usePrediction = TplConvert::_2int(value.c_str()) == 1;
+            return;
+        }
+        if (key.compare(PAR_USE_RADAR_PRED_SPEED) == 0) {
+            vars->useRadarPredSpeed = TplConvert::_2int(value.c_str()) == 1;
             return;
         }
     } catch (NumberFormatException &) {

@@ -40,6 +40,7 @@ const double CC_VehicleVariables::defaultK[][MAX_N_CARS] =
     };
 const double CC_VehicleVariables::defaultB[MAX_N_CARS] = {1800, 1800, 1800, 1800, 1800, 1800, 1800, 1800};
 const double CC_VehicleVariables::defaultH[MAX_N_CARS] = {0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8};
+const double CC_VehicleVariables::defaultS[MAX_N_CARS] = {15, 15, 15, 15, 15, 15, 15, 15};
 
 CC_VehicleVariables::CC_VehicleVariables() :
     controllerAcceleration(0), frontSpeed(0), frontAcceleration(0),
@@ -61,6 +62,7 @@ CC_VehicleVariables::CC_VehicleVariables() :
     flatbedKa(2.4), flatbedKv(0.6), flatbedKp(12), flatbedD(5), flatbedH(4),
     engine(0), engineModel(CC_ENGINE_MODEL_FOLM),
     usePrediction(false),
+    useRadarPredSpeed(false),
     autoLaneChange(false) {
     fakeData.frontAcceleration = 0;
     fakeData.frontControllerAcceleration = 0;
@@ -76,6 +78,7 @@ CC_VehicleVariables::CC_VehicleVariables() :
     memcpy(K, defaultK, sizeof(double)*MAX_N_CARS*MAX_N_CARS);
     memcpy(b, defaultB, sizeof(double)*MAX_N_CARS);
     memcpy(h, defaultH, sizeof(double)*MAX_N_CARS);
+    memcpy(s, defaultS, sizeof(double)*MAX_N_CARS);
     //no data about any vehicle has been set
     for (int i = 0; i < MAX_N_CARS; i++)
         initialized[i] = false;

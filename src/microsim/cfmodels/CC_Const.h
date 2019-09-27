@@ -107,6 +107,9 @@ struct VEHICLE_DATA {
 #define CC_PAR_FLATBED_H                 "ccfh"    //h parameter of flatbed CACC
 #define CC_PAR_FLATBED_D                 "ccfd"    //distance parameter of flatbed CACC
 
+#define CC_PAR_CONSENSUS_S               "cccs"    //spacing parameter of consensus CACC
+#define CC_PAR_CONSENSUS_H               "ccch"    //headway parameter of consensus CACC
+
 #define CC_PAR_VEHICLE_ENGINE_MODEL      "ccem"    //set the engine model for a vehicle
 
 #define CC_PAR_VEHICLE_MODEL             "ccvm"    //set the vehicle model, i.e., engine characteristics
@@ -171,6 +174,9 @@ struct VEHICLE_DATA {
 
 // enabling/disabling data prediction
 #define PAR_USE_PREDICTION               "ccup"
+
+// enabling/disabling radar predecessor speed
+#define PAR_USE_RADAR_PRED_SPEED         "ccrps"
 
 // add/remove members from own platoon
 #define PAR_ADD_MEMBER                   "ccam"

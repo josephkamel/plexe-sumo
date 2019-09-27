@@ -85,6 +85,11 @@ public:
      */
     const static double defaultH[];
 
+    /**
+     * Default spacing vector s for the consensus controller
+     */
+    const static double defaultS[];
+
     CC_VehicleVariables();
     ~CC_VehicleVariables();
 
@@ -166,6 +171,8 @@ public:
     double b[MAX_N_CARS];
     /// @brief vector of time headways h
     double h[MAX_N_CARS];
+    /// @brief vector of spacing s (consensus controller)
+    double s[MAX_N_CARS];
 
     /// @brief data about vehicles in the platoon
     struct Plexe::VEHICLE_DATA vehicles[MAX_N_CARS];
@@ -204,6 +211,10 @@ public:
 
     /// @brief enable/disable data prediction (interpolation) for missing data
     bool usePrediction;
+
+    /// @brief whether CACC controllers use the predecessor speed measured by the radar or obtained
+    /// through wireless communication
+    bool useRadarPredSpeed;
 
     /// @brief list of members belonging to my platoon
     std::map<int, std::string> members;
